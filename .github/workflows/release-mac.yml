@@ -41,10 +41,45 @@ jobs:
           shasum -a 256 "dist/AI-Study-Assistant-MVP-mac-arm64-${GITHUB_REF_NAME}.zip" \
             > "dist/AI-Study-Assistant-MVP-mac-arm64-${GITHUB_REF_NAME}.sha256"
 
+      - name: Prepare release metadata
+        id: release_meta
+        working-directory: ai-study-assistant-mvp
+        run: |
+          APP_VERSION=$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")
+          BUILD_TIME=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          RELEASE_NAME="AI Study Assistant MVP v${APP_VERSION} | macOS arm64 | ${BUILD_TIME}"
+          {
+            echo "app_version=${APP_VERSION}"
+            echo "build_time=${BUILD_TIME}"
+            echo "release_name<<EOF"
+            echo "${RELEASE_NAME}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          cat > ../release-notes.md <<EOF
+          ## Release Info
+          - Version: v${APP_VERSION}
+          - Release tag: ${GITHUB_REF_NAME}
+          - Supported device: Mac
+          - Supported architecture: macOS arm64 (Apple Silicon)
+          - Build time (UTC): ${BUILD_TIME}
+          - Source commit: ${GITHUB_SHA}
+
+          ## Included fixes
+          - Bundled skills now resolve from packaged app resources instead of hardcoded local absolute paths.
+          - Removed stray bundled artifacts such as \`.DS_Store\` and \`Untitled\`.
+          - Essay skill draft output path now writes relative to the current workspace.
+          - Upload buttons in the document area now use higher-contrast styling on light backgrounds.
+
+          ## Assets
+          - \`AI-Study-Assistant-MVP-mac-arm64-${GITHUB_REF_NAME}.zip\`
+          - \`AI-Study-Assistant-MVP-mac-arm64-${GITHUB_REF_NAME}.sha256\`
+          EOF
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          name: ${{ steps.release_meta.outputs.release_name }}
+          body_path: release-notes.md
           files: |
             ai-study-assistant-mvp/dist/AI-Study-Assistant-MVP-mac-arm64-${{ github.ref_name }}.zip
             ai-study-assistant-mvp/dist/AI-Study-Assistant-MVP-mac-arm64-${{ github.ref_name }}.sha256

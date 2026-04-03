@@ -1,3 +1,4 @@
+import { app } from 'electron'
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -302,7 +303,8 @@ async function executeClaudeCli(input: {
 
   const runtimeEnv = {
     ...process.env,
-    ...getClaudeRuntimeEnv()
+    ...getClaudeRuntimeEnv(),
+    ...(command.useElectronRunAsNode ? { ELECTRON_RUN_AS_NODE: '1' } : {})
   }
 
   return new Promise<ClaudeTurnResult>((resolve, reject) => {
@@ -463,8 +465,31 @@ async function executeClaudeCli(input: {
   })
 }
 
-function resolveClaudeCliCommand(): { command: string; args: string[] } {
+function resolveClaudeCliCommand(): {
+  command: string
+  args: string[]
+  useElectronRunAsNode: boolean
+} {
   const require = createRequire(import.meta.url)
+
+  if (app.isPackaged) {
+    const unpackedCliPath = join(
+      process.resourcesPath,
+      'app.asar.unpacked',
+      'node_modules',
+      '@anthropic-ai',
+      'claude-code',
+      'cli.js'
+    )
+
+    if (existsSync(unpackedCliPath)) {
+      return {
+        command: process.execPath,
+        args: [unpackedCliPath],
+        useElectronRunAsNode: true
+      }
+    }
+  }
 
   try {
     const packageJsonPath = require.resolve('@anthropic-ai/claude-code/package.json')
@@ -473,7 +498,8 @@ function resolveClaudeCliCommand(): { command: string; args: string[] } {
     if (existsSync(cliPath)) {
       return {
         command: process.execPath,
-        args: [cliPath]
+        args: [cliPath],
+        useElectronRunAsNode: true
       }
     }
   } catch {
@@ -482,7 +508,8 @@ function resolveClaudeCliCommand(): { command: string; args: string[] } {
 
   return {
     command: 'claude',
-    args: []
+    args: [],
+    useElectronRunAsNode: false
   }
 }
 

@@ -397,6 +397,36 @@ code {
   justify-content: flex-end;
 }
 
+.upload-action-button {
+  min-width: 124px;
+  border: 1px solid transparent;
+  box-shadow: 0 10px 24px rgba(52, 38, 24, 0.12);
+}
+
+.secondary-button.upload-action-button-primary {
+  background: linear-gradient(135deg, #f4d6bf, #d4916e);
+  border-color: rgba(180, 112, 72, 0.35);
+  color: var(--text-dark);
+}
+
+.secondary-button.upload-action-button-secondary,
+.secondary-button.subtle.upload-action-button-secondary {
+  background: rgba(24, 24, 24, 0.92);
+  border-color: rgba(24, 24, 24, 0.92);
+  color: #fff7f0;
+}
+
+.secondary-button.upload-action-button-primary:hover {
+  background: linear-gradient(135deg, #f7e3d3, #de9f7d);
+  border-color: rgba(180, 112, 72, 0.5);
+}
+
+.secondary-button.upload-action-button-secondary:hover,
+.secondary-button.subtle.upload-action-button-secondary:hover {
+  background: rgba(36, 36, 36, 0.96);
+  border-color: rgba(36, 36, 36, 0.96);
+}
+
 .document-list {
   display: grid;
   gap: 12px;

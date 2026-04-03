@@ -371,14 +371,14 @@ export default function App() {
 
                   <div className="upload-actions">
                     <button
-                      className="secondary-button"
+                      className="secondary-button upload-action-button upload-action-button-primary"
                       disabled={busy !== 'idle'}
                       onClick={() => fileInputRef.current?.click()}
                     >
                       上传文档
                     </button>
                     <button
-                      className="secondary-button subtle"
+                      className="secondary-button subtle upload-action-button upload-action-button-secondary"
                       disabled={busy !== 'idle'}
                       onClick={() => void handleSystemPicker()}
                     >

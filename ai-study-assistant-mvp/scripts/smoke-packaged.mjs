@@ -1,117 +1,153 @@
 import assert from 'node:assert/strict'
-import { existsSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { _electron as electron } from 'playwright'
 
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const executablePath = resolve(
+  projectRoot,
   'dist/mac-arm64/AI Study Assistant MVP.app/Contents/MacOS/AI Study Assistant MVP'
 )
-const skill = process.env.SMOKE_SKILL || 'statement-writing'
+const packagedSkillsDir = resolve(
+  projectRoot,
+  'dist/mac-arm64/AI Study Assistant MVP.app/Contents/Resources/resources/bundled-skills'
+)
+const cvPath = join(projectRoot, 'CV1.pdf')
+const reportPath = join(projectRoot, 'report1.pdf')
+const artifactDir = join(projectRoot, 'tmp-smoke-artifacts-packaged')
 
 if (!existsSync(executablePath)) {
   throw new Error(`Packaged app not found: ${executablePath}`)
 }
 
-const app = await electron.launch({
-  executablePath
-})
+rmSync(artifactDir, { recursive: true, force: true })
+mkdirSync(artifactDir, { recursive: true })
 
-try {
-  const window = await app.firstWindow()
-  await window.waitForLoadState('domcontentloaded')
-  await window.waitForTimeout(1200)
+assertPackagedSkillsArePortable()
+await runEssayFlow()
+await runReportFlow()
 
-  if (skill === 'report-writing') {
-    await window.getByRole('button', { name: /报告写作/ }).click()
+console.log('Packaged Phase 2/3 smoke test passed.')
+
+async function runEssayFlow() {
+  console.log('[essay-packaged] launching app')
+  const app = await electron.launch({
+    executablePath
+  })
+
+  try {
+    const window = await app.firstWindow()
+    await window.waitForLoadState('domcontentloaded')
+
+    console.log('[essay-packaged] uploading CV1.pdf')
+    await window.getByLabel('上传文档文件').setInputFiles(cvPath)
+    console.log('[essay-packaged] starting Claude session')
     await window
-      .getByLabel('用户意图')
-      .fill(
-        '请帮我写一篇数字平台治理课程报告，主题是算法透明度与用户信任的关系。中文 2500 字以内，引用必须真实，我打算结合平台规则说明和课程阅读来写，整体立场偏向“透明度与信任是条件关系，而不是自动正相关”。'
-      )
-  } else {
+      .getByLabel('意图输入')
+      .fill('我要申请 Columbia Learning Analytics，请结合 CV1.pdf 先开启真实文书对话，并在回复里尽量形成可比较的输出。')
+    await window.getByRole('button', { name: '开始真实 Claude 会话' }).click()
+
+    await waitForSystemMessage(window, '/essay-craft', 240000)
+    await waitForAssistantCount(window, 1, 240000)
+
     await window
-      .getByLabel('用户意图')
-      .fill('请帮我写一篇申请 Learning Sciences 硕士的 SOP，重点突出我在教育产品与用户研究上的经历。')
-  }
+      .getByLabel('继续发送消息')
+      .fill('文书类型是 SOP，目标项目是 Columbia Learning Analytics，字数上限 900 words。请基于 CV1.pdf 先梳理一版更具体的问题和故事线。')
+    await window.getByRole('button', { name: '发送给 Claude' }).click()
+    await waitForAssistantCount(window, 2, 240000)
 
-  await window.getByRole('button', { name: '启动顾问会话' }).click()
-  await waitForAssistantMessageCount(window, 1, 300000)
+    await window
+      .getByLabel('继续发送消息')
+      .fill('请继续，把目前最清晰的一版中文要点直接写出来，突出教育产品、用户研究和转向学习分析的动机。')
+    await window.getByRole('button', { name: '发送给 Claude' }).click()
+    await waitForAssistantCount(window, 3, 240000)
 
-  const initialAssistantText = await latestAssistantText(window)
-  assert.ok(initialAssistantText.length > 40, 'Consultant first turn is too short.')
-
-  await window
-    .getByLabel('继续补充信息')
-    .fill(
-      skill === 'report-writing'
-        ? '老师要求中文 2500 字以内，引用必须真实。我准备使用 TikTok 的推荐系统说明作案例，课程阅读想用 Pasquale 2015《The Black Box Society》和 Diakopoulos 2016《Accountability in Algorithmic Decision Making》，核心论点是“透明度只有在可解释和可争辩时才会提升用户信任”。'
-        : '我更想突出自己把真实学习问题转化成产品方案的能力，长度控制在 900 words 左右，不要编造学校信息。'
+    await window.getByRole('button', { name: '对比页' }).click()
+    await waitForVersionButtons(window, 3, 120000)
+    await window.getByRole('button', { name: '运行 Qwen baseline' }).click()
+    await window.waitForFunction(
+      () => {
+        const cards = Array.from(document.querySelectorAll('.result-card'))
+        return Boolean(cards[0] && (cards[0].textContent || '').length > 120)
+      },
+      undefined,
+      { timeout: 240000 }
     )
-  await window.getByRole('button', { name: '发送给顾问' }).click()
-  await waitForAssistantMessageCount(window, 2, 300000)
+    await window.getByRole('button', { name: 'version-2' }).click()
+    await window.getByRole('button', { name: '写入 selected.md' }).click()
+    await waitForStatusText(window, 'version-2.md 已写入 outputs/selected.md。', 120000)
 
-  const secondAssistantText = await latestAssistantText(window)
-  assert.ok(secondAssistantText.length > 40, 'Consultant second turn is too short.')
+    const outputsDir = await readPathByLabel(window, 'outputs')
+    const workspaceDir = dirname(outputsDir)
+    const skillsDir = join(workspaceDir, '.claude', 'skills')
 
-  await window.getByRole('button', { name: '生成候选版本' }).click()
-  await window.waitForFunction(
-    () => {
-      const cards = Array.from(document.querySelectorAll('.result-card'))
-      return Boolean(cards[0] && (cards[0].textContent || '').length > 160)
-    },
-    undefined,
-    { timeout: 360000 }
-  )
+    assert.ok(existsSync(join(outputsDir, 'version-1.md')))
+    assert.ok(existsSync(join(outputsDir, 'version-2.md')))
+    assert.ok(existsSync(join(outputsDir, 'version-3.md')))
+    assert.ok(existsSync(join(outputsDir, 'selected.md')))
+    assert.ok(existsSync(join(outputsDir, 'baseline-qwen.md')))
+    assert.ok(existsSync(join(skillsDir, 'essay-craft', 'SKILL.md')))
+    assertCleanSkillDirectory(skillsDir)
+    assert.doesNotMatch(
+      readFileSync(join(skillsDir, 'essay-craft', 'SKILL.md'), 'utf8'),
+      /\/Users\//
+    )
 
-  const candidateCardText = (await window.locator('.result-card').nth(0).textContent()) ?? ''
-  assert.ok(
-    candidateCardText.length > 160 && !candidateCardText.includes('请选择要浏览的版本。'),
-    'Candidate version did not render correctly.'
-  )
+    const selectedMarkdown = readFileSync(join(outputsDir, 'selected.md'), 'utf8')
+    const versionTwoMarkdown = readFileSync(join(outputsDir, 'version-2.md'), 'utf8')
+    assert.equal(selectedMarkdown, versionTwoMarkdown)
 
-  await window.getByRole('button', { name: '选中当前版本' }).click()
-  await window.waitForFunction(
-    () => Array.from(document.querySelectorAll('*')).some((node) => /已选中：version-/.test(node.textContent || '')),
-    undefined,
-    { timeout: 120000 }
-  )
-
-  await window.getByRole('button', { name: '运行 Qwen 对照组' }).click()
-  await window.waitForFunction(
-    () => {
-      const cards = Array.from(document.querySelectorAll('.result-card'))
-      return Boolean(cards[2] && (cards[2].textContent || '').length > 160)
-    },
-    undefined,
-    { timeout: 240000 }
-  )
-
-  const baselineCardText = (await window.locator('.result-card').nth(2).textContent()) ?? ''
-  assert.ok(
-    baselineCardText.length > 160 && !baselineCardText.includes('运行 Qwen 对照组后在这里显示。'),
-    'Baseline result did not render correctly.'
-  )
-
-  const workspacePath = ((await window.locator('.mono').textContent()) ?? '').trim()
-  assert.ok(workspacePath.length > 10, 'Workspace path did not render.')
-
-  assert.ok(existsSync(join(workspacePath, 'state', 'current-brief.md')))
-  assert.ok(existsSync(join(workspacePath, 'outputs', 'version-1.md')))
-  assert.ok(existsSync(join(workspacePath, 'outputs', 'version-2.md')))
-  assert.ok(existsSync(join(workspacePath, 'outputs', 'version-3.md')))
-  assert.ok(existsSync(join(workspacePath, 'outputs', 'version-notes.md')))
-  assert.ok(existsSync(join(workspacePath, 'outputs', 'selected.md')))
-  assert.ok(existsSync(join(workspacePath, 'outputs', 'baseline-qwen.md')))
-
-  const statusText = (await window.locator('.status-bar').textContent()) ?? ''
-  assert.match(statusText, /(完成|已生成|已写入)/)
-
-  console.log(`Packaged smoke test passed for ${skill}.`)
-} finally {
-  await app.close()
+    await window.screenshot({ path: join(artifactDir, 'essay-packaged.png'), fullPage: true })
+    console.log('[essay-packaged] done')
+  } finally {
+    await app.close()
+  }
 }
 
-async function waitForAssistantMessageCount(window, count, timeout) {
+async function runReportFlow() {
+  console.log('[report-packaged] launching app')
+  const app = await electron.launch({
+    executablePath
+  })
+
+  try {
+    const window = await app.firstWindow()
+    await window.waitForLoadState('domcontentloaded')
+
+    await window.getByRole('button', { name: '报告写作' }).click()
+    await window.getByLabel('上传文档文件').setInputFiles(reportPath)
+    await window
+      .getByLabel('意图输入')
+      .fill('请基于 report1.pdf 启动真实报告写作会话，并先识别题目、约束和后续推进方式。')
+    await window.getByRole('button', { name: '开始真实 Claude 会话' }).click()
+
+    await waitForSystemMessage(window, '/report-ta-orchestrator', 240000)
+    await waitForAssistantCount(window, 1, 240000)
+
+    await window
+      .getByLabel('继续发送消息')
+      .fill('请继续，根据 report1.pdf 先明确 topic、字数约束、audience 和你下一步需要我补充的最小信息。')
+    await window.getByRole('button', { name: '发送给 Claude' }).click()
+    await waitForAssistantCount(window, 2, 240000)
+
+    await window.getByRole('button', { name: '对比页' }).click()
+    const skillsDir = await readPathByLabel(window, '.claude/skills')
+    const reportSkillDir = join(skillsDir, 'report-ta-orchestrator')
+
+    assert.ok(existsSync(join(reportSkillDir, 'SKILL.md')))
+    assert.ok(existsSync(join(reportSkillDir, 'references')))
+    assert.ok(existsSync(join(reportSkillDir, 'scripts')))
+    assertCleanSkillDirectory(skillsDir)
+
+    await window.screenshot({ path: join(artifactDir, 'report-packaged.png'), fullPage: true })
+    console.log('[report-packaged] done')
+  } finally {
+    await app.close()
+  }
+}
+
+async function waitForAssistantCount(window, count, timeout) {
   await window.waitForFunction(
     (expectedCount) => document.querySelectorAll('.message-bubble.assistant').length >= expectedCount,
     count,
@@ -119,8 +155,52 @@ async function waitForAssistantMessageCount(window, count, timeout) {
   )
 }
 
-async function latestAssistantText(window) {
-  const assistantMessages = window.locator('.message-bubble.assistant')
-  const lastIndex = (await assistantMessages.count()) - 1
-  return ((await assistantMessages.nth(lastIndex).textContent()) ?? '').trim()
+async function waitForVersionButtons(window, count, timeout) {
+  await window.waitForFunction(
+    (expectedCount) => document.querySelectorAll('.version-tab').length >= expectedCount,
+    count,
+    { timeout }
+  )
+}
+
+async function waitForSystemMessage(window, text, timeout) {
+  await window
+    .locator('.message-bubble.system')
+    .filter({ hasText: text })
+    .first()
+    .waitFor({ state: 'visible', timeout })
+}
+
+async function waitForStatusText(window, text, timeout) {
+  await window
+    .locator('.status-bar')
+    .filter({ hasText: text })
+    .first()
+    .waitFor({ state: 'visible', timeout })
+}
+
+async function readPathByLabel(window, label) {
+  const button = window.locator('.path-item').filter({ hasText: label }).first()
+  const pathText = (await button.locator('code').textContent())?.trim()
+  assert.ok(pathText, `Unable to read path for ${label}`)
+  return pathText
+}
+
+function assertPackagedSkillsArePortable() {
+  assert.ok(existsSync(join(packagedSkillsDir, 'essay-craft', 'SKILL.md')))
+  assert.ok(existsSync(join(packagedSkillsDir, 'report-ta-orchestrator', 'SKILL.md')))
+  assertCleanSkillDirectory(packagedSkillsDir)
+  assert.doesNotMatch(
+    readFileSync(join(packagedSkillsDir, 'essay-craft', 'SKILL.md'), 'utf8'),
+    /\/Users\//
+  )
+}
+
+function assertCleanSkillDirectory(rootDir) {
+  for (const skillDirName of ['essay-craft', 'report-ta-orchestrator']) {
+    for (const junkFileName of ['.DS_Store', 'Untitled']) {
+      const junkPath = join(rootDir, skillDirName, junkFileName)
+      assert.ok(!existsSync(junkPath), `Unexpected skill artifact found: ${junkPath}`)
+    }
+  }
 }
