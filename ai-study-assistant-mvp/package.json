@@ -1,0 +1,67 @@
+{
+  "name": "ai-study-assistant-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mac-first desktop MVP for guided writing with Qwen baseline and Claude Code + Skill generation.",
+  "author": "Tangbao",
+  "main": "./out/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "tsc --noEmit && electron-vite build",
+    "preview": "electron-vite preview",
+    "dist:mac": "CSC_IDENTITY_AUTO_DISCOVERY=false npm_config_userconfig=/dev/null npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false npm_config_userconfig=/dev/null electron-builder --mac",
+    "pack:mac": "CSC_IDENTITY_AUTO_DISCOVERY=false npm_config_userconfig=/dev/null npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false npm_config_userconfig=/dev/null electron-builder --mac --dir",
+    "smoke:packaged": "node scripts/smoke-packaged.mjs",
+    "smoke:documents": "node scripts/smoke-documents.mjs",
+    "smoke:phase23": "node scripts/smoke-phase23.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.90",
+    "mammoth": "^1.12.0",
+    "pdf-parse": "^2.4.5",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-markdown": "^10.1.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^41.1.0",
+    "electron-builder": "^26.8.1",
+    "electron-vite": "^5.0.0",
+    "playwright": "^1.55.1",
+    "typescript": "^6.0.2",
+    "vite": "^7.2.4"
+  },
+  "build": {
+    "appId": "com.tangbao.ai-study-assistant",
+    "productName": "AI Study Assistant MVP",
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": "resources",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/@anthropic-ai/claude-code/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.education",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    }
+  }
+}
