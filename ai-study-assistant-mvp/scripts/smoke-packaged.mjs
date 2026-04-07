@@ -48,20 +48,19 @@ async function runEssayFlow() {
       .fill('我要申请 Columbia Learning Analytics，请结合 CV1.pdf 先开启真实文书对话，并在回复里尽量形成可比较的输出。')
     await window.getByRole('button', { name: '开始真实 Claude 会话' }).click()
 
-    await waitForSystemMessage(window, '/essay-craft', 240000)
-    await waitForAssistantCount(window, 1, 240000)
+    await waitForConversationReady(window, 1, 480000)
 
     await window
       .getByLabel('继续发送消息')
       .fill('文书类型是 SOP，目标项目是 Columbia Learning Analytics，字数上限 900 words。请基于 CV1.pdf 先梳理一版更具体的问题和故事线。')
     await window.getByRole('button', { name: '发送给 Claude' }).click()
-    await waitForAssistantCount(window, 2, 240000)
+    await waitForConversationReady(window, 2, 240000)
 
     await window
       .getByLabel('继续发送消息')
       .fill('请继续，把目前最清晰的一版中文要点直接写出来，突出教育产品、用户研究和转向学习分析的动机。')
     await window.getByRole('button', { name: '发送给 Claude' }).click()
-    await waitForAssistantCount(window, 3, 240000)
+    await waitForConversationReady(window, 3, 240000)
 
     await window.getByRole('button', { name: '对比页' }).click()
     await waitForVersionButtons(window, 3, 120000)
@@ -80,7 +79,9 @@ async function runEssayFlow() {
 
     const outputsDir = await readPathByLabel(window, 'outputs')
     const workspaceDir = dirname(outputsDir)
+    const stateDir = join(workspaceDir, 'state')
     const skillsDir = join(workspaceDir, '.claude', 'skills')
+    const messagesJson = readFileSync(join(stateDir, 'messages.json'), 'utf8')
 
     assert.ok(existsSync(join(outputsDir, 'version-1.md')))
     assert.ok(existsSync(join(outputsDir, 'version-2.md')))
@@ -88,6 +89,7 @@ async function runEssayFlow() {
     assert.ok(existsSync(join(outputsDir, 'selected.md')))
     assert.ok(existsSync(join(outputsDir, 'baseline-qwen.md')))
     assert.ok(existsSync(join(skillsDir, 'essay-craft', 'SKILL.md')))
+    assert.match(messagesJson, /Claude 已触发 \/essay-craft/)
     assertCleanSkillDirectory(skillsDir)
     assert.doesNotMatch(
       readFileSync(join(skillsDir, 'essay-craft', 'SKILL.md'), 'utf8'),
@@ -122,22 +124,25 @@ async function runReportFlow() {
       .fill('请基于 report1.pdf 启动真实报告写作会话，并先识别题目、约束和后续推进方式。')
     await window.getByRole('button', { name: '开始真实 Claude 会话' }).click()
 
-    await waitForSystemMessage(window, '/report-ta-orchestrator', 240000)
-    await waitForAssistantCount(window, 1, 240000)
+    await waitForConversationReady(window, 1, 480000)
 
     await window
       .getByLabel('继续发送消息')
       .fill('请继续，根据 report1.pdf 先明确 topic、字数约束、audience 和你下一步需要我补充的最小信息。')
     await window.getByRole('button', { name: '发送给 Claude' }).click()
-    await waitForAssistantCount(window, 2, 240000)
+    await waitForConversationReady(window, 2, 240000)
 
     await window.getByRole('button', { name: '对比页' }).click()
+    const outputsDir = await readPathByLabel(window, 'outputs')
     const skillsDir = await readPathByLabel(window, '.claude/skills')
+    const stateDir = join(dirname(outputsDir), 'state')
     const reportSkillDir = join(skillsDir, 'report-ta-orchestrator')
+    const messagesJson = readFileSync(join(stateDir, 'messages.json'), 'utf8')
 
     assert.ok(existsSync(join(reportSkillDir, 'SKILL.md')))
     assert.ok(existsSync(join(reportSkillDir, 'references')))
     assert.ok(existsSync(join(reportSkillDir, 'scripts')))
+    assert.match(messagesJson, /Claude 已触发 \/report-ta-orchestrator/)
     assertCleanSkillDirectory(skillsDir)
 
     await window.screenshot({ path: join(artifactDir, 'report-packaged.png'), fullPage: true })
@@ -147,9 +152,13 @@ async function runReportFlow() {
   }
 }
 
-async function waitForAssistantCount(window, count, timeout) {
+async function waitForConversationReady(window, count, timeout) {
   await window.waitForFunction(
-    (expectedCount) => document.querySelectorAll('.message-bubble.assistant').length >= expectedCount,
+    (expectedCount) => {
+      const assistantCount = document.querySelectorAll('.message-bubble.assistant:not(.loading)').length
+      const followUp = document.querySelector('textarea[aria-label="继续发送消息"]')
+      return assistantCount >= expectedCount && followUp instanceof HTMLTextAreaElement && !followUp.disabled
+    },
     count,
     { timeout }
   )
@@ -161,14 +170,6 @@ async function waitForVersionButtons(window, count, timeout) {
     count,
     { timeout }
   )
-}
-
-async function waitForSystemMessage(window, text, timeout) {
-  await window
-    .locator('.message-bubble.system')
-    .filter({ hasText: text })
-    .first()
-    .waitFor({ state: 'visible', timeout })
 }
 
 async function waitForStatusText(window, text, timeout) {

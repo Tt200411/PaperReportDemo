@@ -1,4 +1,4 @@
-name: Release Mac App
+name: Release Desktop App
 
 on:
   push:
@@ -28,29 +28,49 @@ jobs:
         working-directory: ai-study-assistant-mvp
         run: npm ci
 
-      - name: Build packaged app
+      - name: Build packaged mac app
         working-directory: ai-study-assistant-mvp
         run: npm run pack:mac
 
-      - name: Archive app
+      - name: Archive mac app
         working-directory: ai-study-assistant-mvp
         run: |
+          BUILD_DATE=$(date -u '+%Y-%m-%d')
+          APP_VERSION=$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")
+          MAC_ASSET_NAME="AI-Study-Assistant-MVP-v${APP_VERSION}-mac-m-chip-${BUILD_DATE}.zip"
           ditto -c -k --sequesterRsrc --keepParent \
             "dist/mac-arm64/AI Study Assistant MVP.app" \
-            "dist/AI-Study-Assistant-MVP-mac-arm64-${GITHUB_REF_NAME}.zip"
-          shasum -a 256 "dist/AI-Study-Assistant-MVP-mac-arm64-${GITHUB_REF_NAME}.zip" \
-            > "dist/AI-Study-Assistant-MVP-mac-arm64-${GITHUB_REF_NAME}.sha256"
+            "dist/${MAC_ASSET_NAME}"
+          shasum -a 256 "dist/${MAC_ASSET_NAME}" \
+            > "dist/${MAC_ASSET_NAME}.sha256"
+
+      - name: Download existing Windows x64 asset
+        working-directory: ai-study-assistant-mvp
+        run: |
+          BUILD_DATE=$(date -u '+%Y-%m-%d')
+          APP_VERSION=$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")
+          WINDOWS_SOURCE_URL="https://github.com/Tt200411/PaperReportDemo/releases/download/v${APP_VERSION}/ai-study-assistant-mvp-${APP_VERSION}.zip"
+          WINDOWS_ASSET_NAME="AI-Study-Assistant-MVP-v${APP_VERSION}-win-x64-${BUILD_DATE}.zip"
+          curl -L --fail --retry 3 -o "dist/${WINDOWS_ASSET_NAME}" "${WINDOWS_SOURCE_URL}"
+          shasum -a 256 "dist/${WINDOWS_ASSET_NAME}" \
+            > "dist/${WINDOWS_ASSET_NAME}.sha256"
 
       - name: Prepare release metadata
         id: release_meta
         working-directory: ai-study-assistant-mvp
         run: |
           APP_VERSION=$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")
+          BUILD_DATE=$(date -u '+%Y-%m-%d')
           BUILD_TIME=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
-          RELEASE_NAME="AI Study Assistant MVP v${APP_VERSION} | macOS arm64 | ${BUILD_TIME}"
+          MAC_ASSET_NAME="AI-Study-Assistant-MVP-v${APP_VERSION}-mac-m-chip-${BUILD_DATE}.zip"
+          WINDOWS_ASSET_NAME="AI-Study-Assistant-MVP-v${APP_VERSION}-win-x64-${BUILD_DATE}.zip"
+          RELEASE_NAME="AI Study Assistant MVP v${APP_VERSION} | macOS Apple Silicon + Windows x64 | ${BUILD_TIME}"
           {
             echo "app_version=${APP_VERSION}"
+            echo "build_date=${BUILD_DATE}"
             echo "build_time=${BUILD_TIME}"
+            echo "mac_asset_name=${MAC_ASSET_NAME}"
+            echo "windows_asset_name=${WINDOWS_ASSET_NAME}"
             echo "release_name<<EOF"
             echo "${RELEASE_NAME}"
             echo "EOF"
@@ -59,20 +79,23 @@ jobs:
           ## Release Info
           - Version: v${APP_VERSION}
           - Release tag: ${GITHUB_REF_NAME}
-          - Supported device: Mac
-          - Supported architecture: macOS arm64 (Apple Silicon)
+          - Supported device: Mac / Windows
+          - Supported architecture: macOS Apple Silicon (M chip) / Windows x64
+          - Asset date: ${BUILD_DATE}
           - Build time (UTC): ${BUILD_TIME}
           - Source commit: ${GITHUB_SHA}
 
-          ## Included fixes
-          - Bundled skills now resolve from packaged app resources instead of hardcoded local absolute paths.
-          - Removed stray bundled artifacts such as \`.DS_Store\` and \`Untitled\`.
-          - Essay skill draft output path now writes relative to the current workspace.
-          - Upload buttons in the document area now use higher-contrast styling on light backgrounds.
+          ## Included changes
+          - UI viewport optimized to stay within a fixed 100vh layout with internal panel scrolling.
+          - Packaged runtime no longer requires a separate local Node.js installation.
+          - Skill trigger detection now falls back to warning mode instead of blocking the session.
+          - Release now bundles both macOS Apple Silicon and Windows x64 assets.
 
           ## Assets
-          - \`AI-Study-Assistant-MVP-mac-arm64-${GITHUB_REF_NAME}.zip\`
-          - \`AI-Study-Assistant-MVP-mac-arm64-${GITHUB_REF_NAME}.sha256\`
+          - \`${MAC_ASSET_NAME}\`
+          - \`${MAC_ASSET_NAME}.sha256\`
+          - \`${WINDOWS_ASSET_NAME}\`
+          - \`${WINDOWS_ASSET_NAME}.sha256\`
           EOF
 
       - name: Create release
@@ -81,5 +104,7 @@ jobs:
           name: ${{ steps.release_meta.outputs.release_name }}
           body_path: release-notes.md
           files: |
-            ai-study-assistant-mvp/dist/AI-Study-Assistant-MVP-mac-arm64-${{ github.ref_name }}.zip
-            ai-study-assistant-mvp/dist/AI-Study-Assistant-MVP-mac-arm64-${{ github.ref_name }}.sha256
+            ai-study-assistant-mvp/dist/${{ steps.release_meta.outputs.mac_asset_name }}
+            ai-study-assistant-mvp/dist/${{ steps.release_meta.outputs.mac_asset_name }}.sha256
+            ai-study-assistant-mvp/dist/${{ steps.release_meta.outputs.windows_asset_name }}
+            ai-study-assistant-mvp/dist/${{ steps.release_meta.outputs.windows_asset_name }}.sha256

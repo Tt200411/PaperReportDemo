@@ -1,1 +1,7 @@
 .DS_Store
+ai-study-assistant-mvp/.npm-cache/
+ai-study-assistant-mvp/dist/
+ai-study-assistant-mvp/node_modules/
+ai-study-assistant-mvp/out/
+ai-study-assistant-mvp/tmp-smoke-artifacts/
+ai-study-assistant-mvp/tmp-smoke-artifacts-packaged/

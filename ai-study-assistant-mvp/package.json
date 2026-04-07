@@ -1,6 +1,6 @@
 {
   "name": "ai-study-assistant-mvp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Mac-first desktop MVP for guided writing with Qwen baseline and Claude Code + Skill generation.",
   "author": "Tangbao",
