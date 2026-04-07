@@ -356,7 +356,7 @@ export default function App() {
                   <span>意图输入</span>
                   <textarea
                     aria-label="意图输入"
-                    rows={7}
+                    rows={3}
                     value={userIntent}
                     onChange={(event) => setUserIntent(event.target.value)}
                     placeholder="例如：我要申请 Columbia Learning Analytics，希望先依据 CV 和项目要求推进入学申请文书。"
@@ -371,14 +371,14 @@ export default function App() {
 
                   <div className="upload-actions">
                     <button
-                      className="secondary-button upload-action-button upload-action-button-primary"
+                      className="secondary-button"
                       disabled={busy !== 'idle'}
                       onClick={() => fileInputRef.current?.click()}
                     >
                       上传文档
                     </button>
                     <button
-                      className="secondary-button subtle upload-action-button upload-action-button-secondary"
+                      className="secondary-button subtle"
                       disabled={busy !== 'idle'}
                       onClick={() => void handleSystemPicker()}
                     >
@@ -465,9 +465,25 @@ export default function App() {
                     ))
                   ) : (
                     <div className="conversation-empty">
-                      还没有对话。点击“开始真实 Claude 会话”后，这里会显示用户输入、slash command
+                      还没有对话。点击"开始真实 Claude 会话"后，这里会显示用户输入、slash command
                       触发状态和 Claude 输出。
                     </div>
+                  )}
+
+                  {(busy === 'starting' || busy === 'sending') && (
+                    <article className="message-bubble assistant loading">
+                      <div className="message-meta">
+                        <span>Claude</span>
+                      </div>
+                      <div className="loading-indicator">
+                        <div className="loading-dots">
+                          <span></span><span></span><span></span>
+                        </div>
+                        <p className="loading-text">
+                          {busy === 'starting' ? 'Claude 正在启动会话，首次响应可能需要 30-60 秒...' : 'Claude 正在思考中...'}
+                        </p>
+                      </div>
+                    </article>
                   )}
                 </div>
 
@@ -476,7 +492,7 @@ export default function App() {
                     <span>继续发送消息</span>
                     <textarea
                       aria-label="继续发送消息"
-                      rows={5}
+                      rows={3}
                       value={followUpMessage}
                       disabled={!session || busy !== 'idle'}
                       onChange={(event) => setFollowUpMessage(event.target.value)}

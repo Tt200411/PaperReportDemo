@@ -1,7 +1,6 @@
 import { app } from 'electron'
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { getSkillDefinition } from '@shared/skills'
@@ -172,14 +171,9 @@ async function runClaudeTurn(input: {
     if (input.expectedSkillId) {
       const expectedCommand = getSkillDefinition(input.expectedSkillId).id
       if (resolvedSkillCommandName !== expectedCommand) {
-        throw new ClaudeTurnError(
-          `Claude 未正确触发 ${getSkillDefinition(input.expectedSkillId).slashCommand}。`,
-          {
-            ...turn,
-            exitCode: turn.exitCode,
-            skillCommandName: resolvedSkillCommandName,
-            skillDetection: turn.skillDetection
-          }
+        // Skill 工具未被正式触发，仅记录日志，不阻断会话
+        console.warn(
+          `[skill-detection] expected=${expectedCommand} actual=${resolvedSkillCommandName ?? 'none'}`
         )
       }
     }
@@ -304,7 +298,8 @@ async function executeClaudeCli(input: {
   const runtimeEnv = {
     ...process.env,
     ...getClaudeRuntimeEnv(),
-    ...(command.useElectronRunAsNode ? { ELECTRON_RUN_AS_NODE: '1' } : {})
+    ELECTRON_RUN_AS_NODE: '1',
+    ELECTRON_DISABLE_GPU: '1'
   }
 
   return new Promise<ClaudeTurnResult>((resolve, reject) => {
@@ -465,41 +460,28 @@ async function executeClaudeCli(input: {
   })
 }
 
-function resolveClaudeCliCommand(): {
-  command: string
-  args: string[]
-  useElectronRunAsNode: boolean
-} {
-  const require = createRequire(import.meta.url)
+function resolveNodeBinary(): string {
+  // 开发时 process.execPath 就是 node/electron；
+  // 打包后也用 process.execPath（即 Electron exe），
+  // 配合 ELECTRON_RUN_AS_NODE=1 环境变量即可当作普通 node 使用，
+  // 这样用户无需自行安装 Node.js。
+  return process.execPath
+}
 
-  if (app.isPackaged) {
-    const unpackedCliPath = join(
-      process.resourcesPath,
-      'app.asar.unpacked',
-      'node_modules',
-      '@anthropic-ai',
-      'claude-code',
-      'cli.js'
-    )
-
-    if (existsSync(unpackedCliPath)) {
-      return {
-        command: process.execPath,
-        args: [unpackedCliPath],
-        useElectronRunAsNode: true
-      }
-    }
-  }
-
+function resolveClaudeCliCommand(): { command: string; args: string[] } {
   try {
-    const packageJsonPath = require.resolve('@anthropic-ai/claude-code/package.json')
+    let packageJsonPath = require.resolve('@anthropic-ai/claude-code/package.json')
+    // 打包后 require.resolve 返回 app.asar 内路径，但外部 node 进程无法读 asar
+    // claude-code 被 asarUnpack 到 app.asar.unpacked 目录
+    if (app.isPackaged) {
+      packageJsonPath = packageJsonPath.replace('app.asar', 'app.asar.unpacked')
+    }
     const cliPath = join(dirname(packageJsonPath), 'cli.js')
 
     if (existsSync(cliPath)) {
       return {
-        command: process.execPath,
-        args: [cliPath],
-        useElectronRunAsNode: true
+        command: resolveNodeBinary(),
+        args: [cliPath]
       }
     }
   } catch {
@@ -508,8 +490,7 @@ function resolveClaudeCliCommand(): {
 
   return {
     command: 'claude',
-    args: [],
-    useElectronRunAsNode: false
+    args: []
   }
 }
 
